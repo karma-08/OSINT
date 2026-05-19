@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+import requests
+import json
+import os
+import time
+from colorama import Fore, Style, init
+
+init(autoreset=True)
+
+# ============ CONFIG ============
+API_TOKEN = os.getenv("LEAKOSINT_API_TOKEN", "ENTER-YOUR-API")
+URL = "https://leakosintapi.com/"
+DEFAULT_LIMIT = 10000
+DEFAULT_LANG = "ru"
+SLEEP_BETWEEN_REQUESTS = 1  # respect rate limit (1 req/sec)
+# ================================
+
+
+def banner():
+    os.system("cls" if os.name == "nt" else "clear")
+    print(Fore.GREEN + r"""
+ ██████╗ ██████╗  ██╗ ███╗   ██╗ ██╗
+██╔════╝ ██╔══██╗ ██║ ████╗  ██║ ██║
+███████╗ ██████╔╝ ██║ ██╔██╗ ██║ ██║
+╚════██║ ██╔══██╗ ██║ ██║╚██╗██║ ██║
+███████║ ██║  ██║ ██║ ██║ ╚████║ ██║
+╚══════╝ ╚═╝  ╚═╝ ╚═╝ ╚═╝  ╚═══╝ ╚═╝   
+    """ + Fore.RED + Style.BRIGHT + "\n➤ Exclusive OSINT by SRINI EXPLOITS\n" + Fore.RESET)
+
+
+def send_request(query, limit=DEFAULT_LIMIT, lang=DEFAULT_LANG):
+    """Send API request and handle all error cases."""
+    payload = {
+        "token": API_TOKEN,
+        "request": query.strip(),
+        "limit": limit,
+        "lang": lang,
+        "type": "json"
+    }
+
+    try:
+        response = requests.post(URL, json=payload, timeout=20)
+        try:
+            data = response.json()
+        except Exception:
+            print(Fore.RED + f"❌ Server returned non-JSON response (HTTP {response.status_code})")
+            print(Fore.YELLOW + response.text[:500])
+            return None
+
+        if response.status_code != 200:
+            print(Fore.RED + f"❌ HTTP Error: {response.status_code}")
+            print(Fore.YELLOW + json.dumps(data, indent=2, ensure_ascii=False))
+            return None
+
+        if "Error code" in data:
+            print(Fore.RED + f"🚫 API Error: {data['Error code']}")
+            return None
+
+        if "error" in data and data["error"] == "502":
+            print(Fore.RED + "⚠ Server error (502). Try again later.")
+            return None
+
+        return data
+
+    except requests.exceptions.Timeout:
+        print(Fore.RED + "❌ Request timed out. Try again.")
+    except requests.exceptions.ConnectionError:
+        print(Fore.RED + "❌ Connection failed. Check your Internet.")
+    except Exception as e:
+        print(Fore.RED + f"❌ Unexpected error: {e}")
+
+    return None
+
+
+def display_results(response):
+    """Display the formatted API data nicely in the console."""
+    if not response or "List" not in response:
+        print(Fore.YELLOW + "⚠ No 'List' data found in response.")
+        return
+
+    databases = response.get("List", {})
+    if not databases:
+        print(Fore.YELLOW + "⚠ No results found.")
+        return
+
+    for db_name, db_data in databases.items():
+        print(Fore.CYAN + f"\n=== DATABASE: {db_name} ===")
+        if db_name == "No results found":
+            print(Fore.YELLOW + "No records for this target.\n")
+            continue
+
+        info = db_data.get("InfoLeak", "")
+        if info:
+            print(Fore.LIGHTBLACK_EX + f"Info: {info}\n")
+
+        entries = db_data.get("Data", [])
+        if not entries:
+            print(Fore.YELLOW + "  (No data entries)")
+            continue
+
+        for entry in entries:
+            print(Fore.GREEN + "-" * 60)
+            for key, val in entry.items():
+                print(Fore.WHITE + f"{key}: {Fore.LIGHTCYAN_EX}{val}")
+        print()  # blank line after each DB
+
+
+def main():
+    banner()
+
+    print(Fore.LIGHTGREEN_EX + "[+] LeakOSINT API CLI started")
+    print(Fore.LIGHTBLACK_EX + f"Token: {API_TOKEN[:8]}... (hidden for safety)")
+    print(Fore.LIGHTBLACK_EX + f"Endpoint: {URL}")
+    print(Fore.LIGHTBLACK_EX + f"Default limit: {DEFAULT_LIMIT}, Language: {DEFAULT_LANG}\n")
+
+    while True:
+        try:
+            query = input(Fore.LIGHTYELLOW_EX + "Enter search target (email, phone, or name) or 'exit' ➤ ").strip()
+            if not query:
+                continue
+            if query.lower() in ["exit", "quit"]:
+                print(Fore.CYAN + "Goodbye.")
+                break
+
+            print(Fore.BLUE + f"\n🔍 Searching for: {query} ...")
+            response = send_request(query)
+            if response:
+                display_results(response)
+
+            print(Fore.LIGHTBLACK_EX + "\n⏳ Waiting 1 second to respect rate limits...\n")
+            time.sleep(SLEEP_BETWEEN_REQUESTS)
+
+        except KeyboardInterrupt:
+            print(Fore.RED + "\n⛔ Exiting...")
+            break
+
+
+if __name__ == "__main__":
+    main()
